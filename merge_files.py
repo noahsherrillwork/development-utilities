@@ -12,14 +12,18 @@
 # FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
 # details.
 
+import os
 import subprocess
 import sys
 
 expected_num_arguments = 4
 if len(sys.argv) == (expected_num_arguments + 1):
-    p4merge_path = 'C:/Program Files/perforce/p4merge'
-    command_args = [p4merge_path]
-    command_args.extend(sys.argv[1:])
+
+    # The -W flag causes the open command to wait until the opened application exits before returning. This is necessary for "git diff" becuase it will delete the temporary files it generates for comparison when this script exits.
+    command_args = ['open', '-a', 'p4merge', '-W', '--args']
+
+    for file_path in sys.argv[1:]:
+        command_args.append(os.path.abspath(file_path))
     p4merge_exit_status = subprocess.call(command_args)
     sys.exit(p4merge_exit_status)
 else:
