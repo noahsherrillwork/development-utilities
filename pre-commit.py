@@ -62,6 +62,12 @@ for file_path in completed_process.stdout.decode().split('\n'):
 for directory in directories_to_format:
 	gradlew_path = os.path.abspath(os.path.join(get_top_level_directory(), 'gradlew'))
 	with change_working_dir(directory):
-		subprocess.run([gradlew_path, 'formatSource'])
+		child_process = subprocess.Popen([gradlew_path, 'formatSource'], stdout=subprocess.PIPE)
+		while not child_process.poll():
+			for line in child_process.stdout:
+				print(line)
+
+if has_unresolved_errors:
+	exit('Please fix source formatting errors before committing. Alternatively, you can bypass the automatic execution of source formatter by passing the "--no-verify" option to "git commit"'))
 
 exit(1)
