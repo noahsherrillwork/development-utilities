@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 # Copyright (c) 2000-present Liferay, Inc. All rights reserved.
 #
 # This library is free software; you can redistribute it and/or modify it under
@@ -10,22 +12,66 @@
 # FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
 # details.
 
+import contextlib
 import os
 import subprocess
 import sys
 
-sub_command = sys.argv[1]
-current_dir = os.getcwd()
-gradle_file_name = 'gradlew.bat'
-last_dir = ''
-command_found = False
-while not command_found and current_dir != last_dir:
-    last_dir = current_dir
-    current_dir = os.path.dirname(current_dir)
-    command_path = os.path.join(current_dir, gradle_file_name)
-    command_found = os.path.exists(command_path)
+def execute():
+	command = sys.argv[1]
+	if command == 'prModuleCheck':
+		run_pr_module_check()
+	else:
+		with move_settings_file():
+			run_gradle_command(command)
 
-if command_found is True:
-    subprocess.run([command_path, sub_command])
-else:
-    print('gradlew command not found')
+
+def run_pr_module_check():
+	with move_settings_file():
+		run_gradle_command('formatSource')
+		run_gradle_command('pmdMain')
+		run_gradle_command('pmdTest')
+
+
+def run_gradle_command(command):
+	gradle_path = os.path.join(get_top_level_directory(), 'gradlew')
+	subprocess.run([gradle_path, command])
+
+
+@contextlib.contextmanager
+def move_settings_file():
+	settings_path = find_settings_file()
+
+	if settings_path:
+		os.rename(settings_path, settings_path + '.tmp')
+
+	yield
+
+	if settings_path:
+		os.rename(settings_path + '.tmp', settings_path)
+
+
+def find_settings_file():
+	settings_name = 'settings.gradle'
+	current_dir = os.getcwd()
+	end_dir = os.path.join(get_top_level_directory(), 'modules')
+	settings_found = False
+	while not settings_found and current_dir != end_dir:
+		settings_path = os.path.join(current_dir, settings_name)
+		settings_found = os.path.exists(settings_path)
+		last_dir = current_dir
+		current_dir = os.path.dirname(current_dir)
+
+	if settings_found:
+		return settings_path
+	else:
+		return None
+
+
+def get_top_level_directory():
+	completed_process = subprocess.run(['git', 'rev-parse', '--show-toplevel'], stdout=subprocess.PIPE)
+	return completed_process.stdout.decode().strip('\n')
+
+
+if __name__ == '__main__':
+	execute()
