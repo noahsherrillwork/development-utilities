@@ -14,36 +14,81 @@
 
 import contextlib
 import os
-import pprint
+import re
 import subprocess
 
-def get_gradle_root_directory(file_path):
-	gradle_file_name = 'build.gradle'
-	current_dir = os.path.dirname(file_path)
-	end_dir = os.path.join(get_top_level_directory(), 'modules')
-	gradle_file_found = False
-	count = 0
-	while not gradle_file_found and current_dir != end_dir:
-		gradle_file_path = os.path.join(current_dir, gradle_file_name)
-		gradle_file_found = os.path.exists(gradle_file_path)
-		last_dir = current_dir
-		current_dir = os.path.dirname(current_dir)
-
-	if gradle_file_found:
-		return os.path.dirname(gradle_file_path)
-	else:
-		return None
+class SourceFormatterResult:
+	def __init__(self, formatted_dir, output):
+		self.formatted_dir = formatted_dir
+		self.output = output
 
 
-def get_top_level_directory():
-	completed_process = subprocess.run(['git', 'rev-parse', '--show-toplevel'], stdout=subprocess.PIPE)
-	return completed_process.stdout.decode().strip('\n')
+def execute_pre_commit_check():
+	dirs_to_format = get_dirs_to_format()
+	source_formatter_results = run_source_formatter(dirs_to_format)
+
+	if has_any_formatting_errors(source_formatter_results):
+		exit('Please fix source formatting errors before committing. Alternatively, you can bypass the automatic execution of source formatter by passing the "--no-verify" option to "git commit"')
+
+
+def get_dirs_to_format():
+	completed_process = subprocess.run(['git', 'diff', '--name-only', '--cached'], stdout=subprocess.PIPE)
+	dirs_to_format = set()
+
+	for file_path in completed_process.stdout.decode().split('\n'):
+		if file_path:
+			dirs_to_format.add(get_gradle_root_dir(file_path))
+
+	return dirs_to_format
+
+
+def run_source_formatter(dirs_to_format):
+	source_formatter_results = []
+
+	for dir_to_format in dirs_to_format:
+		gradlew_path = os.path.abspath(os.path.join(get_top_level_dir(), 'gradlew'))
+
+		with change_working_dir(dir_to_format):
+			completed_process = subprocess.run([gradlew_path, 'formatSource'], stdout=subprocess.PIPE)
+			source_formatter_output = completed_process.stdout.decode()
+			print(source_formatter_output)
+			source_formatter_results.append(SourceFormatterResult(dir_to_format, source_formatter_output))
+
+	return source_formatter_results
+
+
+def has_any_formatting_errors(source_formatter_results):
+	return any([has_formatting_errors(source_formatter_result) for source_formatter_result in source_formatter_results])
+
+
+def get_gradle_root_dir(start_path):
+	return get_ancestor_dir_with_file(start_path, 'build.gradle')
+
+
+def has_formatting_errors(source_formatter_result):
+	pattern = (
+		r': '			# Error messages are followed by these characters
+		r'([./\\\w]+)'	# Relative path for file in which error occurred
+		r'\s'			# White space following file path
+	)
+
+	match = re.search(pattern, source_formatter_result.output)
+	if match:
+		relative_file_path = match.group(1)
+
+		if is_valid_formatted_file_path(source_formatter_result.formatted_dir, relative_file_path):
+			return True
+
+	return False
+
+
+def is_valid_formatted_file_path(formatted_dir, relative_file_path):
+	return os.path.exists(os.path.join(formatted_dir, relative_file_path))
 
 
 @contextlib.contextmanager
 def change_working_dir(new_working_dir):
 	current_working_dir = os.getcwd()
-
 	os.chdir(new_working_dir)
 
 	yield
@@ -51,23 +96,26 @@ def change_working_dir(new_working_dir):
 	os.chdir(current_working_dir)
 
 
-completed_process = subprocess.run(['git', 'diff', '--name-only', '--cached'], stdout=subprocess.PIPE)
+def get_ancestor_dir_with_file(start_dir, file_name):
+	file_found = False
+	current_dir = start_dir
+	end_dir = os.path.join(get_top_level_dir(), 'modules')
 
-directories_to_format = set()
+	while not file_found and current_dir != end_dir:
+		file_check_path = os.path.join(current_dir, file_name)
+		file_found = os.path.exists(file_check_path)
+		current_dir = os.path.dirname(current_dir)
 
-for file_path in completed_process.stdout.decode().split('\n'):
-	if file_path:
-		directories_to_format.add(get_gradle_root_directory(file_path))
+	if file_found:
+		return os.path.dirname(file_check_path)
+	else:
+		return None
 
-for directory in directories_to_format:
-	gradlew_path = os.path.abspath(os.path.join(get_top_level_directory(), 'gradlew'))
-	with change_working_dir(directory):
-		child_process = subprocess.Popen([gradlew_path, 'formatSource'], stdout=subprocess.PIPE)
-		while not child_process.poll():
-			for line in child_process.stdout:
-				print(line)
 
-if has_unresolved_errors:
-	exit('Please fix source formatting errors before committing. Alternatively, you can bypass the automatic execution of source formatter by passing the "--no-verify" option to "git commit"'))
+def get_top_level_dir():
+	completed_process = subprocess.run(['git', 'rev-parse', '--show-toplevel'], stdout=subprocess.PIPE)
+	return completed_process.stdout.decode().strip('\n')
 
-exit(1)
+
+if __name__ == '__main__':
+	execute_pre_commit_check()
