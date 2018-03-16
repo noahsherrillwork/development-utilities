@@ -36,7 +36,7 @@ def get_dirs_to_format():
 	dirs_to_format = set()
 
 	for file_path in completed_process.stdout.decode().split('\n'):
-		if file_path:
+		if file_path and is_java_file(file_path):
 			dirs_to_format.add(get_gradle_root_dir(file_path))
 
 	return dirs_to_format
@@ -84,6 +84,10 @@ def has_formatting_errors(source_formatter_result):
 
 def is_valid_formatted_file_path(formatted_dir, relative_file_path):
 	return os.path.exists(os.path.join(formatted_dir, relative_file_path))
+
+
+def is_java_file(file_path):
+	return os.path.splitext(file_path)[1] == '.java'
 
 
 @contextlib.contextmanager
